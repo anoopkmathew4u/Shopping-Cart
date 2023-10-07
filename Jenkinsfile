@@ -1,63 +1,57 @@
 pipeline {
     agent any
-    tools{
-        jdk  'jdk11'
-        maven  'maven3'
+    tools {
+        jdk 'jdk17'
+        maven 'maven3'
     }
-    
-    environment{
+    environment {
         SCANNER_HOME= tool 'sonar-scanner'
     }
-    
+
     stages {
-        stage('Git Checkout') {
+        stage('Git checkout') {
             steps {
-                git branch: 'main', changelog: false, credentialsId: '15fb69c3-3460-4d51-bd07-2b0545fa5151', poll: false, url: 'https://github.com/jaiswaladi246/Shopping-Cart.git'
+                git branch: 'main', url: 'https://github.com/sakshipalkar/Shopping-Cart.git'
             }
         }
-        
-        stage('COMPILE') {
+        stage('Compile') {
             steps {
-                sh "mvn clean compile -DskipTests=true"
+                sh 'mvn clean compile'
             }
         }
-        
-        stage('OWASP Scan') {
+        stage('Sonarqube Analysis') {
             steps {
-                dependencyCheck additionalArguments: '--scan ./ ', odcInstallation: 'DP'
+                sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.url=http://54.236.30.52:9000/ -Dsonar.login=squ_b235a1b1b98b536724709aac1e007898e54b6828 -Dsonar.projectName=shopping-cart \
+                -Dsonar.java.binaries=. \
+                -Dsonar.projectKey=shopping-cart '''
+            }
+        }
+        stage('OSWAP SCAN') {
+            steps {
+                dependencyCheck additionalArguments: '--scan ./', odcInstallation: 'DP'
                 dependencyCheckPublisher pattern: '**/dependency-check-report.xml'
             }
         }
-        
-        stage('Sonarqube') {
+        stage('Build_App') {
             steps {
-                withSonarQubeEnv('sonar-server'){
-                   sh ''' $SCANNER_HOME/bin/sonar-scanner -Dsonar.projectName=Shopping-Cart \
-                   -Dsonar.java.binaries=. \
-                   -Dsonar.projectKey=Shopping-Cart '''
-               }
+                sh 'mvn clean install -DskipTests=true'
             }
         }
-        
-        stage('Build') {
-            steps {
-                sh "mvn clean package -DskipTests=true"
-            }
-        }
-        
-        stage('Docker Build & Push') {
+        stage('Build&PUSH Docker image') {
             steps {
                 script{
-                    withDockerRegistry(credentialsId: '2fe19d8a-3d12-4b82-ba20-9d22e6bf1672', toolName: 'docker') {
-                        
-                        sh "docker build -t shopping-cart -f docker/Dockerfile ."
-                        sh "docker tag  shopping-cart adijaiswal/shopping-cart:latest"
-                        sh "docker push adijaiswal/shopping-cart:latest"
-                    }
+                    withDockerRegistry(credentialsId: 'docker-cred', toolName: 'docker') {
+                        sh 'docker build -t shopping:latest -f docker/Dockerfile .'
+                        sh 'docker tag shopping:latest anoopkamthew4u/shopping:latest'
+                        sh 'docker push anoopkamthew4u/shopping:latest'
+}
                 }
             }
         }
-        
-        
+        stage('CD_Trigger') {
+            steps {
+                build job: "CD_pipe" , wait: true
+            }
+        }
     }
 }
